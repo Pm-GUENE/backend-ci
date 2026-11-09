@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from .config import settings
 from .database import engine
+from .routers import public
 from .seed import init_db
 
 
@@ -21,6 +22,8 @@ app = FastAPI(title="DentaRDV API",
 
 app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS,
                    allow_methods=["*"], allow_headers=["*"])
+
+app.include_router(public.router)
 
 
 @app.get("/health", tags=["Système"], summary="État du service")
