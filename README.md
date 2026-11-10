@@ -56,7 +56,8 @@ backend-ci/
 │   ├── security.py      # Hachage et vérification des mots de passe
 │   ├── seed.py          # Données de départ (soins, admin, dentistes de démo)
 │   └── routers/
-│       └── public.py    # Routes publiques (dentistes, soins, créneaux)
+│       ├── public.py        # Routes publiques (dentistes, soins, créneaux)
+│       └── rendez_vous.py   # Réservation d'un rendez-vous
 ├── tests/               # Tests unitaires (pytest)
 ├── requirements.txt     # Dépendances Python
 ├── .env.example         # Modèle des variables d'environnement
@@ -199,12 +200,12 @@ La documentation complète et testable est sur `/docs`. Les dates sont au format
 | GET | `/soins` | Liste des motifs. Filtre : `?dentiste_id=` |
 | GET | `/dentistes/{id}/soins` | Motifs proposés par un dentiste (404 si inconnu) |
 | GET | `/creneaux?dentiste_id=&du=&au=` | Créneaux libres d'un dentiste sur une période (31 jours maximum) |
+| POST | `/rendez-vous` | Réserver un rendez-vous. Renvoie 201 et le numéro de rendez-vous (`id`). Erreurs : 404 (dentiste ou motif inconnu), 409 (créneau pris), 422 (données ou créneau invalides) |
 
 ### À venir
 
 | Méthode | Route | Rôle |
 |---|---|---|
-| POST | `/rendez-vous` | Créer un rendez-vous |
 | GET | `/rendez-vous/{id}?tel=` | Suivre un rendez-vous (patient) |
 | PATCH | `/rendez-vous/{id}/annulation?tel=` | Annulation par le patient |
 | POST | `/connexion` | Connexion dentiste ou administrateur (jeton JWT) |
@@ -241,6 +242,23 @@ Vérifications utiles :
 | `GET /creneaux` avec `au` avant `du` | 422 |
 
 Les créneaux passés sont volontairement absents : utiliser des dates futures.
+
+Tests de `POST /rendez-vous` (corps JSON, dates futures) :
+
+| Cas | Résultat attendu |
+|---|---|
+| Réservation valide | 201, statut `en_attente`, un `id` (numéro de rendez-vous) |
+| Même dentiste, même date et même heure | 409 « Ce créneau vient d'être pris, choisissez-en un autre » |
+| Même heure chez un autre dentiste | 201 |
+| Samedi ou dimanche | 422 |
+| Date dans le passé | 422 |
+| Heure `17:00` ou `09:15` | 422 |
+| Motif que le dentiste ne propose pas | 422 |
+| Téléphone invalide (`12345`) | 422 |
+| Dentiste ou motif inexistant | 404 |
+| Après annulation du rendez-vous | le créneau redevient réservable |
+
+Le téléphone est accepté avec espaces ou indicatif (`77 123 45 67`, `+221 77 123 45 67`) et stocké sous la forme `771234567`.
 
 ---
 
