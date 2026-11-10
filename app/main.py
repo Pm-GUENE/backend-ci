@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from .config import settings
 from .database import engine
-from .routers import public, rendez_vous
+from .routers import auth, public, rendez_vous
 from .services import ErreurMetier
 from .seed import init_db
 
@@ -26,6 +26,7 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS,
                    allow_methods=["*"], allow_headers=["*"])
 
 app.include_router(public.router)
+app.include_router(auth.router)
 app.include_router(rendez_vous.router)
 
 

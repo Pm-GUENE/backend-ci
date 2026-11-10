@@ -75,3 +75,26 @@ class SuiviOut(RendezVousOut):
 
 RendezVousOut.model_rebuild()
 SuiviOut.model_rebuild()
+
+
+class ConnexionIn(BaseModel):
+    identifiant: str = Field(..., min_length=1, max_length=100)
+    mot_de_passe: str = Field(..., min_length=1, max_length=128)
+
+
+class JetonOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str = Field(..., description="`dentiste` ou `admin`")
+    nom: str
+    doit_changer_mdp: bool = Field(..., description="Si vrai, afficher la page « Changer votre mot de passe »")
+
+
+class MotDePasseIn(BaseModel):
+    nouveau_mot_de_passe: str = Field(..., min_length=8, max_length=72)
+    confirmation: str | None = Field(None, description="Facultatif : si fourni, doit être identique")
+
+
+class MessageOut(BaseModel):
+    message: str
+    doit_changer_mdp: bool

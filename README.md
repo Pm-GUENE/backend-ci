@@ -36,7 +36,7 @@ L'API permet :
 | **SQLite** | Base locale pour développer et tester (un seul fichier) |
 | **PostgreSQL** | Base de données en production (Docker Compose) |
 | **bcrypt** | Hachage des mots de passe |
-| **PyJWT** | Jetons de connexion (à venir) |
+| **PyJWT** | Jetons de connexion (JWT) |
 | **pytest** | Tests unitaires |
 | **bandit, pip-audit** | Scans de sécurité du code et des dépendances |
 
@@ -53,9 +53,11 @@ backend-ci/
 │   ├── models.py        # Tables : dentiste, soin, rendez_vous, ...
 │   ├── schemas.py       # Forme des réponses de l'API
 │   ├── services.py      # Règles métier (horaires, créneaux libres, ...)
-│   ├── security.py      # Hachage et vérification des mots de passe
+│   ├── security.py      # Mots de passe (bcrypt) et jetons JWT
+│   ├── deps.py          # Qui est connecté ? Droits dentiste / administrateur
 │   ├── seed.py          # Données de départ (soins, admin, dentistes de démo)
 │   └── routers/
+│       ├── auth.py          # Connexion et changement de mot de passe
 │       ├── public.py        # Routes publiques (dentistes, soins, créneaux)
 │       └── rendez_vous.py   # Réservation d'un rendez-vous
 ├── tests/               # Tests unitaires (pytest)
@@ -141,7 +143,8 @@ Aucun secret n'est stocké dans le code ni dans Git. Les réglages sont lus dans
 | Variable | Rôle | Valeur par défaut (développement) |
 |---|---|---|
 | `DATABASE_URL` | Adresse de la base de données | `sqlite:///./dentardv.db` |
-| `JWT_SECRET` | Clé de signature des jetons | `dev-secret-a-changer` |
+| `JWT_SECRET` | Clé de signature des jetons (au moins 32 caractères en déploiement) | `dev-only-secret-change-me-0123456789abcdef` |
+| `JWT_EXPIRE_MINUTES` | Durée de validité d'un jeton de connexion | `480` (8 h) |
 | `ADMIN_IDENTIFIANT` | Identifiant de l'administrateur créé au démarrage | `admin` |
 | `ADMIN_PASSWORD` | Mot de passe initial de l'administrateur | `admin-dev` |
 | `DEMO_PASSWORD` | Mot de passe des dentistes de démonstration | `Demo-dev-2026` |
@@ -202,14 +205,14 @@ La documentation complète et testable est sur `/docs`. Les dates sont au format
 | GET | `/creneaux?dentiste_id=&du=&au=` | Créneaux libres d'un dentiste sur une période (31 jours maximum) |
 | GET | `/rendez-vous/{id}?tel=` | Suivre un rendez-vous (numéro + téléphone). 404 « Rendez-vous introuvable » si le couple ne correspond pas. Renvoie aussi `annulable` |
 | PATCH | `/rendez-vous/{id}/annulation?tel=` | Annulation par le patient. 409 si le rendez-vous est terminé, déjà annulé ou passé |
+| POST | `/connexion` | Connexion dentiste ou administrateur. Renvoie un jeton JWT, le rôle et `doit_changer_mdp`. 401 « Identifiant ou mot de passe incorrect » |
+| PATCH | `/mot-de-passe` | Changer son mot de passe (jeton requis). Minimum 8 caractères, différent de l'actuel. Obligatoire à la première connexion d'un dentiste |
 | POST | `/rendez-vous` | Réserver un rendez-vous. Renvoie 201 et le numéro de rendez-vous (`id`). Erreurs : 404 (dentiste ou motif inconnu), 409 (créneau pris), 422 (données ou créneau invalides) |
 
 ### À venir
 
 | Méthode | Route | Rôle |
 |---|---|---|
-| POST | `/connexion` | Connexion dentiste ou administrateur (jeton JWT) |
-| PATCH | `/mot-de-passe` | Changement de mot de passe |
 | GET | `/admin/dentistes` | Liste des dentistes (administrateur) |
 | POST | `/admin/dentistes` | Création d'un dentiste (administrateur) |
 | GET | `/mes-rendez-vous` | Rendez-vous du dentiste connecté |
@@ -217,6 +220,25 @@ La documentation complète et testable est sur `/docs`. Les dates sont au format
 | PATCH | `/rendez-vous/{id}` | Changer le statut (dentiste concerné) |
 
 ---
+
+### Authentification
+
+1. `POST /connexion` avec `{"identifiant": "...", "mot_de_passe": "..."}` renvoie `access_token`.
+2. Les routes protégées attendent l'en-tête `Authorization: Bearer <access_token>`.
+3. Dans `/docs` : bouton **Authorize** (en haut à droite), coller le jeton, valider. Les routes protégées sont alors appelables avec « Try it out ».
+
+| Situation | Réponse |
+|---|---|
+| Pas de jeton, jeton invalide ou expiré | 401 |
+| Connecté mais mauvais rôle (ex. dentiste sur une route admin) | 403 |
+| Dentiste qui n'a pas encore changé son mot de passe temporaire | 403 « Vous devez d'abord changer votre mot de passe » (seule `PATCH /mot-de-passe` reste accessible) |
+
+Comptes créés au démarrage (valeurs par défaut en local) :
+
+| Compte | Identifiant | Mot de passe |
+|---|---|---|
+| Administrateur | `admin` (`ADMIN_IDENTIFIANT`) | `ADMIN_PASSWORD` |
+| Dentistes de démonstration | `moustapha.diaw`, `awa.ndiaye`, `cheikh.fall` | `DEMO_PASSWORD` |
 
 ## 9. Tester l'API à la main
 
