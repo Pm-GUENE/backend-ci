@@ -68,4 +68,10 @@ class DentisteResume(BaseModel):
     specialite: str
 
 
+class SuiviOut(RendezVousOut):
+    """Réponse du suivi patient. `annulable` indique si le bouton « Annuler » doit s'afficher."""
+    annulable: bool
+
+
 RendezVousOut.model_rebuild()
+SuiviOut.model_rebuild()

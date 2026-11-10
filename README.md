@@ -200,14 +200,14 @@ La documentation complète et testable est sur `/docs`. Les dates sont au format
 | GET | `/soins` | Liste des motifs. Filtre : `?dentiste_id=` |
 | GET | `/dentistes/{id}/soins` | Motifs proposés par un dentiste (404 si inconnu) |
 | GET | `/creneaux?dentiste_id=&du=&au=` | Créneaux libres d'un dentiste sur une période (31 jours maximum) |
+| GET | `/rendez-vous/{id}?tel=` | Suivre un rendez-vous (numéro + téléphone). 404 « Rendez-vous introuvable » si le couple ne correspond pas. Renvoie aussi `annulable` |
+| PATCH | `/rendez-vous/{id}/annulation?tel=` | Annulation par le patient. 409 si le rendez-vous est terminé, déjà annulé ou passé |
 | POST | `/rendez-vous` | Réserver un rendez-vous. Renvoie 201 et le numéro de rendez-vous (`id`). Erreurs : 404 (dentiste ou motif inconnu), 409 (créneau pris), 422 (données ou créneau invalides) |
 
 ### À venir
 
 | Méthode | Route | Rôle |
 |---|---|---|
-| GET | `/rendez-vous/{id}?tel=` | Suivre un rendez-vous (patient) |
-| PATCH | `/rendez-vous/{id}/annulation?tel=` | Annulation par le patient |
 | POST | `/connexion` | Connexion dentiste ou administrateur (jeton JWT) |
 | PATCH | `/mot-de-passe` | Changement de mot de passe |
 | GET | `/admin/dentistes` | Liste des dentistes (administrateur) |

@@ -6,8 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .models import STATUTS_ACTIFS, Dentiste, RendezVous, Soin
+from .models import (STATUT_ANNULE, STATUT_CONFIRME, STATUT_EN_ATTENTE, STATUT_TERMINE,
+                     STATUTS_ACTIFS, Dentiste, RendezVous, Soin)
 
+MESSAGE_INTROUVABLE = "Rendez-vous introuvable. Vérifiez votre numéro et votre téléphone."
 MESSAGE_CRENEAU_PRIS = "Ce créneau vient d'être pris, choisissez-en un autre"
 
 
@@ -121,5 +123,57 @@ def creer_rendez_vous(db: Session, *, patient_nom: str, patient_tel: str, dentis
     except IntegrityError:
         db.rollback()
         raise ErreurMetier(409, MESSAGE_CRENEAU_PRIS)
+    db.refresh(rdv)
+    return rdv
+
+
+# ---------- Statuts ----------
+TRANSITIONS = {
+    STATUT_EN_ATTENTE: {STATUT_CONFIRME, STATUT_ANNULE},
+    STATUT_CONFIRME: {STATUT_TERMINE, STATUT_ANNULE},
+    STATUT_TERMINE: set(),   # ne change plus
+    STATUT_ANNULE: set(),    # ne change plus
+}
+
+
+def moment_du_rdv(rdv: RendezVous) -> dt.datetime:
+    return dt.datetime.combine(rdv.date, rdv.heure)
+
+
+def verifier_transition(rdv: RendezVous, nouveau: str, now: dt.datetime) -> None:
+    """Lève ErreurMetier(409) si le changement de statut est interdit."""
+    if nouveau not in TRANSITIONS.get(rdv.statut, set()):
+        raise ErreurMetier(409, f"Changement de statut impossible : "
+                                f"{rdv.statut} -> {nouveau}")
+    if nouveau == STATUT_TERMINE and moment_du_rdv(rdv) > now:
+        raise ErreurMetier(409, "Un rendez-vous ne peut être terminé qu'après son heure")
+
+
+def est_annulable_par_patient(rdv: RendezVous, now: dt.datetime) -> bool:
+    return rdv.statut in STATUTS_ACTIFS and moment_du_rdv(rdv) > now
+
+
+# ---------- Suivi par le patient ----------
+def trouver_rdv_patient(db: Session, rdv_id: int, tel: str) -> RendezVous:
+    """Le couple numéro + téléphone doit correspondre, sinon 404 sans dire lequel est faux."""
+    try:
+        tel_normalise = normaliser_telephone(tel)
+    except ValueError:
+        raise ErreurMetier(404, MESSAGE_INTROUVABLE)
+    rdv = db.get(RendezVous, rdv_id)
+    if not rdv or rdv.patient_tel != tel_normalise:
+        raise ErreurMetier(404, MESSAGE_INTROUVABLE)
+    return rdv
+
+
+def annuler_par_patient(db: Session, rdv_id: int, tel: str, now: dt.datetime) -> RendezVous:
+    rdv = trouver_rdv_patient(db, rdv_id, tel)
+    if rdv.statut not in STATUTS_ACTIFS:
+        raise ErreurMetier(409, "Ce rendez-vous ne peut plus être annulé (déjà terminé ou annulé)")
+    verifier_transition(rdv, STATUT_ANNULE, now)
+    if moment_du_rdv(rdv) <= now:
+        raise ErreurMetier(409, "Ce rendez-vous est déjà passé, il ne peut plus être annulé")
+    rdv.statut = STATUT_ANNULE  # le créneau redevient libre (l'index ne concerne que les actifs)
+    db.commit()
     db.refresh(rdv)
     return rdv
