@@ -98,3 +98,31 @@ class MotDePasseIn(BaseModel):
 class MessageOut(BaseModel):
     message: str
     doit_changer_mdp: bool
+
+
+class DentisteCreate(BaseModel):
+    nom: str = Field(..., min_length=3, max_length=100, description="Prénom(s) et nom, ex. Moustapha Diaw")
+    specialite: str = Field(..., min_length=2, max_length=100)
+    soin_ids: list[int] = Field(..., min_length=1, description="Identifiants des motifs proposés (au moins un)")
+
+    @field_validator("nom")
+    @classmethod
+    def verifier_nom(cls, v: str) -> str:
+        v = re.sub(r"\s+", " ", v.strip())
+        if not re.fullmatch(r"[^\W\d_]+(?:[ '\-][^\W\d_]+)+", v) or " " not in v:
+            raise ValueError("Indiquer le prénom et le nom, avec des lettres uniquement")
+        return v
+
+    @field_validator("specialite")
+    @classmethod
+    def nettoyer_specialite(cls, v: str) -> str:
+        return re.sub(r"\s+", " ", v.strip())
+
+
+class DentisteAdminOut(DentisteOut):
+    identifiant: str
+
+
+class DentisteCreeOut(DentisteAdminOut):
+    mot_de_passe_temporaire: str = Field(
+        ..., description="Affiché une seule fois : à transmettre au dentiste")

@@ -1,11 +1,14 @@
 """Règles métier. Fonctions simples qui reçoivent `now` en paramètre : faciles à tester."""
 import datetime as dt
 import re
+import secrets
+import unicodedata
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .security import hash_password
 from .models import (STATUT_ANNULE, STATUT_CONFIRME, STATUT_EN_ATTENTE, STATUT_TERMINE,
                      STATUTS_ACTIFS, Dentiste, RendezVous, Soin)
 
@@ -177,3 +180,74 @@ def annuler_par_patient(db: Session, rdv_id: int, tel: str, now: dt.datetime) ->
     db.commit()
     db.refresh(rdv)
     return rdv
+
+
+# ---------- Création d'un dentiste par l'administrateur ----------
+MAJUSCULES = "ABCDEFGHJKLMNPQRSTUVWXYZ"   # sans I ni O
+MINUSCULES = "abcdefghijkmnopqrstuvwxyz"  # sans l
+CHIFFRES = "23456789"                     # sans 0 ni 1
+LONGUEUR_MDP_TEMPORAIRE = 12
+
+
+def sans_accents_minuscules(texte: str) -> str:
+    decompose = unicodedata.normalize("NFKD", texte)
+    return "".join(c for c in decompose if not unicodedata.combining(c)).lower()
+
+
+def identifiant_de_base(nom_complet: str) -> str:
+    """'Moustapha Diaw' -> 'moustapha.diaw' (premier prénom + dernier mot du nom)."""
+    mots = [re.sub(r"[^a-z0-9]", "", sans_accents_minuscules(m)) for m in nom_complet.split()]
+    mots = [m for m in mots if m]
+    if len(mots) < 2:
+        raise ErreurMetier(422, "Indiquer le prénom et le nom du dentiste")
+    return f"{mots[0]}.{mots[-1]}"
+
+
+def generer_identifiant(db: Session, nom_complet: str) -> str:
+    """prenom.nom ; si l'identifiant existe déjà, on ajoute un numéro (diaw2, diaw3...)."""
+    base = identifiant_de_base(nom_complet)
+    existants = set(db.scalars(select(Dentiste.identifiant).where(Dentiste.identifiant.like(f"{base}%"))))
+    if base not in existants:
+        return base
+    numero = 2
+    while f"{base}{numero}" in existants:
+        numero += 1
+    return f"{base}{numero}"
+
+
+def generer_mot_de_passe_temporaire(longueur: int = LONGUEUR_MDP_TEMPORAIRE) -> str:
+    """Aléatoire (module secrets), au moins 10 caractères, sans 0 O 1 l I."""
+    longueur = max(longueur, 10)
+    tous = MAJUSCULES + MINUSCULES + CHIFFRES
+    caracteres = [secrets.choice(MAJUSCULES), secrets.choice(MINUSCULES), secrets.choice(CHIFFRES)]
+    caracteres += [secrets.choice(tous) for _ in range(longueur - 3)]
+    secrets.SystemRandom().shuffle(caracteres)
+    return "".join(caracteres)
+
+
+def creer_dentiste(db: Session, *, nom: str, specialite: str,
+                   soin_ids: list[int]) -> tuple[Dentiste, str]:
+    """Crée le dentiste avec un identifiant et un mot de passe temporaire générés.
+    Le mot de passe en clair est renvoyé UNE seule fois ; seul son hachage est enregistré."""
+    ids = sorted(set(soin_ids))
+    if not ids:
+        raise ErreurMetier(422, "Choisir au moins un motif de consultation")
+    soins = list(db.scalars(select(Soin).where(Soin.id.in_(ids)).order_by(Soin.id)))
+    if len(soins) != len(ids):
+        raise ErreurMetier(422, "Un des motifs de consultation choisis n'existe pas")
+
+    mot_de_passe = generer_mot_de_passe_temporaire()
+    for _ in range(5):  # nouvelle tentative si deux créations simultanées prennent le même identifiant
+        dentiste = Dentiste(nom=nom, specialite=specialite,
+                            identifiant=generer_identifiant(db, nom),
+                            mot_de_passe_hash=hash_password(mot_de_passe),
+                            doit_changer_mdp=True, soins=soins)
+        db.add(dentiste)
+        try:
+            db.commit()
+            db.refresh(dentiste)
+            return dentiste, mot_de_passe
+        except IntegrityError:
+            db.rollback()
+            soins = list(db.scalars(select(Soin).where(Soin.id.in_(ids)).order_by(Soin.id)))
+    raise ErreurMetier(409, "Impossible de générer un identifiant, réessayez")

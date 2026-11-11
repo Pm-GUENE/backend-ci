@@ -57,6 +57,7 @@ backend-ci/
 │   ├── deps.py          # Qui est connecté ? Droits dentiste / administrateur
 │   ├── seed.py          # Données de départ (soins, admin, dentistes de démo)
 │   └── routers/
+│       ├── admin.py         # Gestion des dentistes (administrateur)
 │       ├── auth.py          # Connexion et changement de mot de passe
 │       ├── public.py        # Routes publiques (dentistes, soins, créneaux)
 │       └── rendez_vous.py   # Réservation d'un rendez-vous
@@ -207,14 +208,14 @@ La documentation complète et testable est sur `/docs`. Les dates sont au format
 | PATCH | `/rendez-vous/{id}/annulation?tel=` | Annulation par le patient. 409 si le rendez-vous est terminé, déjà annulé ou passé |
 | POST | `/connexion` | Connexion dentiste ou administrateur. Renvoie un jeton JWT, le rôle et `doit_changer_mdp`. 401 « Identifiant ou mot de passe incorrect » |
 | PATCH | `/mot-de-passe` | Changer son mot de passe (jeton requis). Minimum 8 caractères, différent de l'actuel. Obligatoire à la première connexion d'un dentiste |
+| GET | `/admin/dentistes` | Liste des dentistes avec identifiant et motifs, le plus récent en premier (administrateur) |
+| POST | `/admin/dentistes` | Créer un dentiste (administrateur) : le système génère l'identifiant `prenom.nom` (suffixe `2`, `3`... en cas de doublon) et un mot de passe temporaire de 12 caractères, renvoyé une seule fois. Au moins un motif obligatoire |
 | POST | `/rendez-vous` | Réserver un rendez-vous. Renvoie 201 et le numéro de rendez-vous (`id`). Erreurs : 404 (dentiste ou motif inconnu), 409 (créneau pris), 422 (données ou créneau invalides) |
 
 ### À venir
 
 | Méthode | Route | Rôle |
 |---|---|---|
-| GET | `/admin/dentistes` | Liste des dentistes (administrateur) |
-| POST | `/admin/dentistes` | Création d'un dentiste (administrateur) |
 | GET | `/mes-rendez-vous` | Rendez-vous du dentiste connecté |
 | GET | `/mes-notifications` | Nouveaux rendez-vous et rappels à 15 minutes |
 | PATCH | `/rendez-vous/{id}` | Changer le statut (dentiste concerné) |
@@ -239,6 +240,12 @@ Comptes créés au démarrage (valeurs par défaut en local) :
 |---|---|---|
 | Administrateur | `admin` (`ADMIN_IDENTIFIANT`) | `ADMIN_PASSWORD` |
 | Dentistes de démonstration | `moustapha.diaw`, `awa.ndiaye`, `cheikh.fall` | `DEMO_PASSWORD` |
+
+### Création d'un dentiste (administrateur)
+
+- Identifiant : premier prénom + dernier mot du nom, en minuscules et sans accents (`Aïssatou Ndiaye` donne `aissatou.ndiaye`). Si l'identifiant existe, un numéro est ajouté (`moustapha.diaw2`).
+- Mot de passe temporaire : 12 caractères aléatoires (module `secrets`), sans `0`, `O`, `1`, `l`, `I`. Il n'est **jamais stocké en clair** (seul le hachage bcrypt l'est) et n'est affiché qu'à la création. La réponse porte l'en-tête `Cache-Control: no-store`.
+- À sa première connexion, le dentiste doit changer ce mot de passe (`doit_changer_mdp`).
 
 ## 9. Tester l'API à la main
 
