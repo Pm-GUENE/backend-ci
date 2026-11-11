@@ -58,6 +58,7 @@ backend-ci/
 │   ├── seed.py          # Données de départ (soins, admin, dentistes de démo)
 │   └── routers/
 │       ├── admin.py         # Gestion des dentistes (administrateur)
+│       ├── dentiste.py      # Espace dentiste : rendez-vous, notifications, statuts
 │       ├── auth.py          # Connexion et changement de mot de passe
 │       ├── public.py        # Routes publiques (dentistes, soins, créneaux)
 │       └── rendez_vous.py   # Réservation d'un rendez-vous
@@ -195,7 +196,7 @@ Points importants :
 
 La documentation complète et testable est sur `/docs`. Les dates sont au format `AAAA-MM-JJ`.
 
-### Disponibles
+### Toutes les routes
 
 | Méthode | Route | Rôle |
 |---|---|---|
@@ -210,17 +211,10 @@ La documentation complète et testable est sur `/docs`. Les dates sont au format
 | PATCH | `/mot-de-passe` | Changer son mot de passe (jeton requis). Minimum 8 caractères, différent de l'actuel. Obligatoire à la première connexion d'un dentiste |
 | GET | `/admin/dentistes` | Liste des dentistes avec identifiant et motifs, le plus récent en premier (administrateur) |
 | POST | `/admin/dentistes` | Créer un dentiste (administrateur) : le système génère l'identifiant `prenom.nom` (suffixe `2`, `3`... en cas de doublon) et un mot de passe temporaire de 12 caractères, renvoyé une seule fois. Au moins un motif obligatoire |
+| GET | `/mes-rendez-vous` | Rendez-vous du dentiste connecté (filtres `?du=`, `?au=`, `?soin_id=`, `?statut=`). Chaque rendez-vous porte `actions_possibles` |
+| GET | `/mes-notifications` | Demandes `en_attente` et rappels à 15 minutes, avec `nombre` pour la pastille (appel toutes les 30 s) |
+| PATCH | `/rendez-vous/{id}` | Le dentiste concerné change le statut : `confirme`, `termine` ou `annule`. 403 si ce n'est pas son rendez-vous, 409 si le changement est interdit |
 | POST | `/rendez-vous` | Réserver un rendez-vous. Renvoie 201 et le numéro de rendez-vous (`id`). Erreurs : 404 (dentiste ou motif inconnu), 409 (créneau pris), 422 (données ou créneau invalides) |
-
-### À venir
-
-| Méthode | Route | Rôle |
-|---|---|---|
-| GET | `/mes-rendez-vous` | Rendez-vous du dentiste connecté |
-| GET | `/mes-notifications` | Nouveaux rendez-vous et rappels à 15 minutes |
-| PATCH | `/rendez-vous/{id}` | Changer le statut (dentiste concerné) |
-
----
 
 ### Authentification
 
@@ -241,11 +235,19 @@ Comptes créés au démarrage (valeurs par défaut en local) :
 | Administrateur | `admin` (`ADMIN_IDENTIFIANT`) | `ADMIN_PASSWORD` |
 | Dentistes de démonstration | `moustapha.diaw`, `awa.ndiaye`, `cheikh.fall` | `DEMO_PASSWORD` |
 
+### Espace dentiste
+
+- `GET /mes-rendez-vous` ne renvoie que les rendez-vous du dentiste connecté. Le planning de la semaine utilise `?du=&au=`.
+- **Changements de statut** : `en_attente` → `confirme` → `termine`. Annulation possible depuis `en_attente` ou `confirme` (le créneau redevient libre). `termine` est refusé avant l'heure du rendez-vous. Un rendez-vous `annule` ou `termine` ne change plus (409).
+- **Notifications** : la demande « nouveau rendez-vous » reste tant que le rendez-vous est `en_attente` (elle disparaît s'il est annulé). Le **rappel** apparaît pour un rendez-vous `confirme` dont l'heure est dans 15 minutes ou moins, et disparaît à l'heure du rendez-vous.
+
 ### Création d'un dentiste (administrateur)
 
 - Identifiant : premier prénom + dernier mot du nom, en minuscules et sans accents (`Aïssatou Ndiaye` donne `aissatou.ndiaye`). Si l'identifiant existe, un numéro est ajouté (`moustapha.diaw2`).
 - Mot de passe temporaire : 12 caractères aléatoires (module `secrets`), sans `0`, `O`, `1`, `l`, `I`. Il n'est **jamais stocké en clair** (seul le hachage bcrypt l'est) et n'est affiché qu'à la création. La réponse porte l'en-tête `Cache-Control: no-store`.
 - À sa première connexion, le dentiste doit changer ce mot de passe (`doit_changer_mdp`).
+
+---
 
 ## 9. Tester l'API à la main
 

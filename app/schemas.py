@@ -126,3 +126,45 @@ class DentisteAdminOut(DentisteOut):
 class DentisteCreeOut(DentisteAdminOut):
     mot_de_passe_temporaire: str = Field(
         ..., description="Affiché une seule fois : à transmettre au dentiste")
+
+
+class RdvDentisteOut(BaseModel):
+    id: int
+    patient_nom: str
+    patient_tel: str
+    date: dt.date
+    heure: dt.time
+    statut: str
+    soin: SoinOut
+    cree_le: dt.datetime
+    actions_possibles: list[str] = Field(
+        ..., description="Statuts applicables maintenant (pour afficher les boutons)")
+
+
+class ChangementStatut(BaseModel):
+    statut: str = Field(..., description="`confirme`, `termine` ou `annule` (les accents sont tolérés)")
+
+    @field_validator("statut")
+    @classmethod
+    def verifier_statut(cls, v: str) -> str:
+        from .services import STATUTS_MODIFIABLES, sans_accents_minuscules
+        v = sans_accents_minuscules(v.strip())
+        if v not in STATUTS_MODIFIABLES:
+            raise ValueError("Statut possible : confirme, termine ou annule")
+        return v
+
+
+class NotificationRdv(BaseModel):
+    id: int
+    date: dt.date
+    heure: dt.time
+    patient_nom: str
+    motif: str
+
+
+class NotificationsOut(BaseModel):
+    nombre: int = Field(..., description="Valeur de la pastille de comptage")
+    nouveaux_rendez_vous: list[NotificationRdv] = Field(
+        ..., description="Rendez-vous `en_attente` (bloc « Demandes en attente »)")
+    rappels: list[NotificationRdv] = Field(
+        ..., description="Rendez-vous confirmés dans 15 minutes ou moins (bannière de rappel)")

@@ -6,11 +6,11 @@ import unicodedata
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .security import hash_password
 from .models import (STATUT_ANNULE, STATUT_CONFIRME, STATUT_EN_ATTENTE, STATUT_TERMINE,
-                     STATUTS_ACTIFS, Dentiste, RendezVous, Soin)
+                     STATUTS, STATUTS_ACTIFS, Dentiste, RendezVous, Soin)
 
 MESSAGE_INTROUVABLE = "Rendez-vous introuvable. Vérifiez votre numéro et votre téléphone."
 MESSAGE_CRENEAU_PRIS = "Ce créneau vient d'être pris, choisissez-en un autre"
@@ -251,3 +251,76 @@ def creer_dentiste(db: Session, *, nom: str, specialite: str,
             db.rollback()
             soins = list(db.scalars(select(Soin).where(Soin.id.in_(ids)).order_by(Soin.id)))
     raise ErreurMetier(409, "Impossible de générer un identifiant, réessayez")
+
+
+# ---------- Espace dentiste ----------
+RAPPEL_MINUTES = 15
+STATUTS_MODIFIABLES = (STATUT_CONFIRME, STATUT_TERMINE, STATUT_ANNULE)
+
+
+def normaliser_statut(valeur: str) -> str:
+    """Accepte 'confirmé' ou 'confirme' (casse et accents ignorés). Lève 422 si inconnu."""
+    statut = sans_accents_minuscules(valeur.strip())
+    if statut not in STATUTS:
+        raise ErreurMetier(422, "Statut inconnu. Valeurs possibles : " + ", ".join(STATUTS))
+    return statut
+
+
+def actions_possibles(rdv: RendezVous, now: dt.datetime) -> list[str]:
+    """Statuts que le dentiste peut appliquer maintenant (sert à afficher les boutons)."""
+    actions = []
+    for nouveau in sorted(TRANSITIONS.get(rdv.statut, set())):
+        if nouveau == STATUT_TERMINE and moment_du_rdv(rdv) > now:
+            continue
+        actions.append(nouveau)
+    return actions
+
+
+def lister_rdv_dentiste(db: Session, dentiste_id: int, du: dt.date | None, au: dt.date | None,
+                        soin_id: int | None, statut: str | None) -> list[RendezVous]:
+    if du and au and au < du:
+        raise ErreurMetier(422, "`au` doit être postérieur ou égal à `du`")
+    requete = (select(RendezVous).options(selectinload(RendezVous.soin))
+               .where(RendezVous.dentiste_id == dentiste_id)
+               .order_by(RendezVous.date, RendezVous.heure))
+    if du:
+        requete = requete.where(RendezVous.date >= du)
+    if au:
+        requete = requete.where(RendezVous.date <= au)
+    if soin_id is not None:
+        requete = requete.where(RendezVous.soin_id == soin_id)
+    if statut:
+        requete = requete.where(RendezVous.statut == normaliser_statut(statut))
+    return list(db.scalars(requete))
+
+
+def changer_statut_dentiste(db: Session, dentiste: Dentiste, rdv_id: int, nouveau: str,
+                            now: dt.datetime) -> RendezVous:
+    rdv = db.get(RendezVous, rdv_id)
+    if not rdv:
+        raise ErreurMetier(404, "Rendez-vous introuvable")
+    if rdv.dentiste_id != dentiste.id:
+        raise ErreurMetier(403, "Ce rendez-vous ne vous appartient pas")
+    verifier_transition(rdv, nouveau, now)
+    rdv.statut = nouveau
+    db.commit()
+    db.refresh(rdv)
+    return rdv
+
+
+def est_rappel(rdv: RendezVous, now: dt.datetime) -> bool:
+    """Rendez-vous confirmé dont l'heure est dans 15 minutes ou moins, et pas encore arrivée."""
+    debut = moment_du_rdv(rdv)
+    return (rdv.statut == STATUT_CONFIRME
+            and now < debut <= now + dt.timedelta(minutes=RAPPEL_MINUTES))
+
+
+def notifications_dentiste(db: Session, dentiste_id: int, now: dt.datetime):
+    """Renvoie (demandes en attente, rappels à 15 minutes) du dentiste."""
+    base = (select(RendezVous).options(selectinload(RendezVous.soin))
+            .where(RendezVous.dentiste_id == dentiste_id)
+            .order_by(RendezVous.date, RendezVous.heure))
+    en_attente = list(db.scalars(base.where(RendezVous.statut == STATUT_EN_ATTENTE)))
+    confirmes_du_jour = db.scalars(base.where(RendezVous.statut == STATUT_CONFIRME,
+                                              RendezVous.date == now.date()))
+    return en_attente, [r for r in confirmes_du_jour if est_rappel(r, now)]

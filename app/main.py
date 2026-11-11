@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from .config import settings
 from .database import engine
-from .routers import admin, auth, public, rendez_vous
+from .routers import admin, auth, dentiste, public, rendez_vous
 from .services import ErreurMetier
 from .seed import init_db
 
@@ -28,6 +28,7 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS,
 app.include_router(public.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(dentiste.router)
 app.include_router(rendez_vous.router)
 
 
