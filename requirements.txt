@@ -1,14 +1,15 @@
-fastapi==0.115.6
+
+fastapi==0.163.0
 uvicorn[standard]==0.34.0
 sqlalchemy==2.0.36
 psycopg2-binary==2.9.10
 pydantic==2.10.4
 bcrypt==4.2.1
-pyjwt==2.10.1
-# tests et scans (utilisés par Jenkins)
-pytest==8.3.4
+PyJWT==2.15.1
+
+# Tests et analyses de sécurité
+pytest==9.2.0
 httpx==0.28.1
 bandit==1.8.0
 pip-audit==2.7.3
-
 pytest-cov==7.1.0
