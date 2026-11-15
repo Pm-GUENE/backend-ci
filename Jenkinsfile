@@ -12,7 +12,7 @@ pipeline {
                 sh '''
                     python3 --version
                     docker --version
-                    trivy --version
+                    docker run --rm aquasec/trivy:0.76.2 --version
                     git --version
                 '''
             }
@@ -68,15 +68,21 @@ pipeline {
         stage('Scan Trivy') {
             steps {
                 sh '''
-                    trivy image \
-                      --severity HIGH,CRITICAL \
-                      --exit-code 0 \
-                      ${IMAGE_NAME}:${BUILD_NUMBER}
+                    docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -v trivy-cache:/root/.cache \
+                        aquasec/trivy:0.76.2 image \
+                        --severity HIGH,CRITICAL \
+                        --exit-code 0 \
+                        ${IMAGE_NAME}:${BUILD_NUMBER}
 
-                    trivy image \
-                      --severity CRITICAL \
-                      --exit-code 1 \
-                      ${IMAGE_NAME}:${BUILD_NUMBER}
+                    docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -v trivy-cache:/root/.cache \
+                        aquasec/trivy:0.76.2 image \
+                        --severity CRITICAL \
+                        --exit-code 1 \
+                        ${IMAGE_NAME}:${BUILD_NUMBER}
                 '''
             }
         }
