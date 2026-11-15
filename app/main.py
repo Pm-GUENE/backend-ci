@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="DentaRDV API",
               description="Prise de rendez-vous pour une clinique dentaire au Sénégal",
-              version="1.0.0", lifespan=lifespan)
+              version="1.0.1", lifespan=lifespan)
 
 app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS,
                    allow_methods=["*"], allow_headers=["*"])
